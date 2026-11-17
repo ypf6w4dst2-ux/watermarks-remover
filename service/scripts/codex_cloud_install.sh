@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Reproducible, user-space setup for a published Codex Cloud environment.
-# Nothing is installed in $HOME and existing skill installations are preserved.
+# Downloaded assets stay in the repository cache. Codex stores plugin metadata
+# in its configured CODEX_HOME; existing skill installations are preserved.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CACHE_ROOT="${WATERMARKS_CLOUD_CACHE_DIR:-${REPO_ROOT}/.codex-cloud}"
