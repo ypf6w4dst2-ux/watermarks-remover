@@ -117,15 +117,42 @@ def validate_codex_catalog() -> dict[str, Any]:
     codex = shutil.which("codex")
     if codex is None:
         raise RuntimeError("Codex CLI is unavailable for the skill-catalog probe")
+    installed_codex_home = Path(
+        os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))
+    ).resolve()
+    installed_config = installed_codex_home / "config.toml"
+    installed_plugins = installed_codex_home / "plugins"
+    if not installed_config.is_file() or not installed_plugins.is_dir():
+        raise RuntimeError(
+            f"installed Codex plugin registry is incomplete: {installed_codex_home}"
+        )
     # Probe outside the repository so project-skill links cannot mask a broken
-    # environment-local plugin installation.
-    with tempfile.TemporaryDirectory(prefix="wm-cloud-catalog-") as tmp:
+    # environment-local plugin installation. Published Cloud snapshots can
+    # expose CODEX_HOME read-only at task runtime, while `codex` still needs to
+    # create an installation id and its argv[0] helpers. Copy only the
+    # non-secret plugin registry and config into a disposable writable home;
+    # deliberately exclude auth.json and every credential-bearing file.
+    with tempfile.TemporaryDirectory(
+        prefix=".wm-cloud-catalog-", dir=REPO_ROOT.parent
+    ) as tmp:
+        probe_root = Path(tmp)
+        probe_codex_home = probe_root / "codex-home"
+        probe_codex_home.mkdir()
+        shutil.copy2(installed_config, probe_codex_home / "config.toml")
+        shutil.copytree(
+            installed_plugins,
+            probe_codex_home / "plugins",
+            symlinks=True,
+        )
+        probe_env = os.environ.copy()
+        probe_env["CODEX_HOME"] = str(probe_codex_home)
         run = subprocess.run(
             [codex, "debug", "prompt-input", "/skills"],
             check=False,
             text=True,
             capture_output=True,
-            cwd=tmp,
+            cwd=probe_root,
+            env=probe_env,
         )
     if run.returncode != 0:
         raise RuntimeError(f"Codex skill-catalog probe failed: {run.stderr.strip()}")
@@ -136,7 +163,7 @@ def validate_codex_catalog() -> dict[str, Any]:
         "ok": True,
         "names": list(names),
         "occurrences": occurrences,
-        "scope": "plugin-only catalog probe outside the repository",
+        "scope": "plugin-only catalog probe in a writable shadow of installed CODEX_HOME",
     }
 
 
